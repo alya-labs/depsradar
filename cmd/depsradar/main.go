@@ -14,13 +14,7 @@ import (
 	"depsradar/internal/registry"
 	"depsradar/internal/scanner"
 	"depsradar/internal/updater"
-	"flag"
-	"fmt"
-	"log/slog"
-	"os"
-	"time"
 )
-
 
 var (
 	Version = "1.1.0"

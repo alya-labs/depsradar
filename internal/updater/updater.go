@@ -6,11 +6,10 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"os/exec"
 	"runtime"
 )
 
-const Repo = "yourusername/depsradar"
+const Repo = "alya-labs/depsradar"
 
 type GitHubRelease struct {
 	TagName string `json:"tag_name"`

@@ -1,0 +1,11 @@
+# Binaries at root (compiled outputs)
+/depsradar
+/depsradar-ui
+*.old
+
+# Build artifacts
+/dist/
+
+# OS
+.DS_Store
+Thumbs.db

@@ -26,6 +26,8 @@ var (
 	clrText   = lipgloss.Color("#C8DCC0")
 	clrMuted  = lipgloss.Color("#3A5C3A")
 	clrMuted2 = lipgloss.Color("#5A7A5A")
+	clrDark   = lipgloss.Color("#0D0D0D") // contrast text on bright pill backgrounds
+	clrLight  = lipgloss.Color("#E8F4E8") // contrast text on dark pill backgrounds
 	clrBorder = lipgloss.Color("#1B3320")
 	clrBill   = lipgloss.Color("#9A7020")
 	clrHead   = lipgloss.Color("#C4883A")
@@ -66,10 +68,10 @@ var (
 			Padding(0, 1)
 
 	stKeyHint = lipgloss.NewStyle().
-			Border(lipgloss.NormalBorder()).
-			BorderForeground(clrMuted).
-			Padding(0, 1).
-			Foreground(clrText)
+			Background(clrMuted).
+			Foreground(clrText).
+			Bold(true).
+			Padding(0, 1)
 
 	stHdr = lipgloss.NewStyle().Foreground(clrMuted2)
 )
@@ -166,6 +168,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case scanDoneMsg:
 		m.err = msg.err
 		m.report = msg.report
+		if m.report != nil {
+			m.report.Timestamp = time.Now()
+		}
 		m.state = stateResults
 		return m, nil
 	}
@@ -334,14 +339,16 @@ func (m Model) viewResults() string {
 
 	// Header
 	sb.WriteString("\n")
-	title := stTitle.Render("📡 DepsRadar") + "  " +
-		lipgloss.NewStyle().
-			Border(lipgloss.NormalBorder()).
-			BorderForeground(clrBorder).
-			Padding(0, 1).
-			Foreground(clrMuted2).
-			Render("v1.1.0")
-	sb.WriteString("  " + title + "\n")
+	versionPill := lipgloss.NewStyle().
+		Background(clrMuted).Foreground(clrText).Padding(0, 1).Render("v1.1.0")
+
+	var tsStr string
+	if !r.Timestamp.IsZero() {
+		tsStr = "  " + stMuted.Render("scanned "+r.Timestamp.Format("2006-01-02 15:04:05"))
+	}
+
+	title := stTitle.Render("  DepsRadar") + "  " + versionPill + tsStr
+	sb.WriteString(title + "\n")
 	sb.WriteString("  " + stMuted.Render(strings.Repeat("─", 60)) + "\n\n")
 
 	// Projects
@@ -367,7 +374,19 @@ func renderProject(res model.ScanResult) string {
 	icon := stTeal.Render("◈")
 	name := stAmber.Render(res.Project.Name)
 	meta := stMuted.Render(fmt.Sprintf("(%s — %d deps)", res.Project.ManifestType, len(res.Project.Dependencies)))
-	sb.WriteString(fmt.Sprintf("  %s  %s  %s\n\n", icon, name, meta))
+
+	var issueParts []string
+	if len(res.Vulnerabilities) > 0 {
+		issueParts = append(issueParts, stRed.Render(fmt.Sprintf("%d vuln", len(res.Vulnerabilities))))
+	}
+	if len(res.OutdatedDeps) > 0 {
+		issueParts = append(issueParts, stTeal.Render(fmt.Sprintf("%d outdated", len(res.OutdatedDeps))))
+	}
+	headerLine := fmt.Sprintf("  %s  %s  %s", icon, name, meta)
+	if len(issueParts) > 0 {
+		headerLine += stMuted.Render("  ·  ") + strings.Join(issueParts, stMuted.Render("  ·  "))
+	}
+	sb.WriteString(headerLine + "\n\n")
 
 	if len(res.Vulnerabilities) == 0 && len(res.OutdatedDeps) == 0 {
 		sb.WriteString("  " + stTeal.Render("✓") + "  " + stText.Render("No issues found") + "\n")
@@ -397,7 +416,7 @@ func renderProject(res model.ScanResult) string {
 
 	t := lgtable.New().
 		Border(lipgloss.RoundedBorder()).
-		BorderStyle(lipgloss.NewStyle().Foreground(clrBorder)).
+		BorderStyle(lipgloss.NewStyle().Foreground(clrMuted2)).
 		Headers("PACKAGE", "VERSION", "CVE", "SEVERITY", "LATEST").
 		StyleFunc(func(row, col int) lipgloss.Style {
 			if row == lgtable.HeaderRow {
@@ -417,55 +436,43 @@ func renderProject(res model.ScanResult) string {
 func severityCell(sev string) string {
 	switch sev {
 	case "CRITICAL":
-		return lipgloss.NewStyle().
-			Foreground(clrRed).Bold(true).
-			Border(lipgloss.NormalBorder()).BorderForeground(clrRed).
-			Padding(0, 1).Render("CRITICAL")
+		return lipgloss.NewStyle().Background(clrRed).Foreground(clrDark).Bold(true).Padding(0, 1).Render("CRITICAL")
 	case "HIGH":
-		return lipgloss.NewStyle().
-			Foreground(clrOrange).Bold(true).
-			Border(lipgloss.NormalBorder()).BorderForeground(clrOrange).
-			Padding(0, 1).Render("HIGH")
+		return lipgloss.NewStyle().Background(clrOrange).Foreground(clrDark).Bold(true).Padding(0, 1).Render("HIGH")
 	case "MEDIUM":
-		return lipgloss.NewStyle().
-			Foreground(clrAmber).
-			Border(lipgloss.NormalBorder()).BorderForeground(clrAmber).
-			Padding(0, 1).Render("MEDIUM")
+		return lipgloss.NewStyle().Background(clrAmber).Foreground(clrDark).Bold(true).Padding(0, 1).Render("MEDIUM")
 	case "OUTDATED":
-		return lipgloss.NewStyle().
-			Foreground(clrTeal).
-			Border(lipgloss.NormalBorder()).BorderForeground(clrTeal).
-			Padding(0, 1).Render("OUTDATED")
+		return lipgloss.NewStyle().Background(clrTeal).Foreground(clrDark).Bold(true).Padding(0, 1).Render("OUTDATED")
 	default:
-		return lipgloss.NewStyle().
-			Foreground(clrMuted2).
-			Border(lipgloss.NormalBorder()).BorderForeground(clrMuted2).
-			Padding(0, 1).Render(sev)
+		return lipgloss.NewStyle().Background(clrMuted2).Foreground(clrLight).Padding(0, 1).Render(sev)
 	}
 }
 
 func renderStats(r *model.Report) string {
-	cell := func(label, value string, vs lipgloss.Style) string {
-		return lipgloss.NewStyle().
-			Width(14).
-			Align(lipgloss.Center).
-			Render(
-				vs.Render(value) + "\n" +
-					stMuted.Render(label),
-			)
+	divider := lipgloss.NewStyle().Foreground(clrMuted2).Height(2).AlignVertical(lipgloss.Center).Render("│")
+
+	cell := func(icon, label, value string, vs lipgloss.Style) string {
+		return lipgloss.NewStyle().Width(16).Align(lipgloss.Center).Render(
+			vs.Bold(true).Render(value) + "\n" + stMuted.Render(icon+" "+label),
+		)
 	}
 
 	cells := []string{
-		cell("CRITICAL", fmt.Sprintf("%d", r.TotalCritical), stRed),
-		cell("HIGH", fmt.Sprintf("%d", r.TotalHigh), stOrange),
-		cell("MEDIUM", fmt.Sprintf("%d", r.TotalMedium), lipgloss.NewStyle().Foreground(clrAmber)),
-		cell("OUTDATED", fmt.Sprintf("%d", r.TotalOutdated), stTeal),
-		cell("DURATION", fmt.Sprintf("%.1fs", r.TotalDuration), stMuted),
+		cell("✖", "CRITICAL", fmt.Sprintf("%d", r.TotalCritical), stRed),
+		divider,
+		cell("▲", "HIGH", fmt.Sprintf("%d", r.TotalHigh), stOrange),
+		divider,
+		cell("●", "MEDIUM", fmt.Sprintf("%d", r.TotalMedium), lipgloss.NewStyle().Foreground(clrAmber)),
+		divider,
+		cell("↑", "OUTDATED", fmt.Sprintf("%d", r.TotalOutdated), stTeal),
+		divider,
+		cell("◷", "DURATION", fmt.Sprintf("%.1fs", r.TotalDuration), stMuted),
 	}
 
 	bar := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
-		BorderForeground(clrBorder).
+		BorderForeground(clrMuted2).
+		Padding(0, 1).
 		Render(lipgloss.JoinHorizontal(lipgloss.Center, cells...))
 
 	return "  " + bar
@@ -487,7 +494,8 @@ func renderKeyhints() string {
 		hint("?", "help"),
 	)
 
-	return "  " + hints
+	separator := "  " + stMuted.Render(strings.Repeat("─", 60)) + "\n"
+	return separator + "  " + hints
 }
 
 // ─── Log interceptor ─────────────────────────────────────────────────────────

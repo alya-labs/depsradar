@@ -27,6 +27,9 @@ func CheckForUpdate(currentVersion string) (string, error) {
 	}
 	defer resp.Body.Close()
 
+	if resp.StatusCode == 404 {
+		return "", nil // no releases published yet
+	}
 	if resp.StatusCode != 200 {
 		return "", fmt.Errorf("github api returned status %d", resp.StatusCode)
 	}

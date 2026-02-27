@@ -7,12 +7,16 @@ import (
 	"os"
 	"time"
 
+	tea "github.com/charmbracelet/bubbletea"
+
 	"depsradar/internal/advisory"
 	"depsradar/internal/cache"
 	"depsradar/internal/config"
 	"depsradar/internal/model"
+	depsreport "depsradar/internal/report"
 	"depsradar/internal/registry"
 	"depsradar/internal/scanner"
+	"depsradar/internal/tui"
 	"depsradar/internal/updater"
 )
 
@@ -160,7 +164,6 @@ func runScan(paths []string) {
 		slog.Warn("Could not load config", "error", err)
 	}
 
-	// Override config with flags if provided
 	if flagCacheTTL != 24 {
 		cfg.CacheTTL = flagCacheTTL
 	}
@@ -171,13 +174,42 @@ func runScan(paths []string) {
 		cfg.Parallel = 10
 	}
 
+	// JSON mode: no TUI, silent logs
+	if flagJSON {
+		report := doScan(allManifests, cfg, nil)
+		report.PrintJSON(os.Stdout)
+		if report.TotalCritical > 0 || report.TotalHigh > 0 {
+			os.Exit(1)
+		}
+		return
+	}
+
+	// TUI mode
+	logCh := make(chan string, 200)
+	logger := tui.NewLogger(logCh, slog.LevelInfo)
+	slog.SetDefault(logger)
+
+	scanFn := func() (*model.Report, error) {
+		report := doScan(allManifests, cfg, logCh)
+		return &report, nil
+	}
+
+	m := tui.New(scanFn, logCh, 0)
+	p := tea.NewProgram(m, tea.WithAltScreen())
+	if _, err := p.Run(); err != nil {
+		fmt.Fprintf(os.Stderr, "TUI error: %v\n", err)
+		os.Exit(1)
+	}
+}
+
+func doScan(allManifests []string, cfg *config.Config, logCh chan string) model.Report {
 	var cacheDB *cache.DB
 	if !flagNoCache {
-		var err error
 		ttl := cfg.CacheTTL
 		if ttl == 0 {
 			ttl = 24
 		}
+		var err error
 		cacheDB, err = cache.NewDB(ttl)
 		if err != nil {
 			slog.Warn("Cache disabled", "error", err)
@@ -198,13 +230,8 @@ func runScan(paths []string) {
 	}
 
 	var scanResults []model.ScanResult
-	var totalErrors []string
 	for i := 0; i < len(allManifests); i++ {
-		result := <-results
-		scanResults = append(scanResults, result)
-		if len(result.Errors) > 0 {
-			totalErrors = append(totalErrors, result.Errors...)
-		}
+		scanResults = append(scanResults, <-results)
 	}
 
 	elapsed := time.Since(start).Seconds()
@@ -228,34 +255,19 @@ func runScan(paths []string) {
 		report.TotalOutdated += len(r.OutdatedDeps)
 	}
 
-	if flagJSON {
-		report.PrintJSON(os.Stdout)
-	} else {
-		report.RenderTerminal(os.Stdout)
-	}
-
-	if len(totalErrors) > 0 && !flagJSON {
-		fmt.Fprintln(os.Stderr, "\nErrors encountered:")
-		for _, e := range totalErrors {
-			fmt.Fprintln(os.Stderr, "  -", e)
-		}
-	}
-
 	if flagExportHTML != "" {
 		report.ExportHTML(flagExportHTML)
-		if !flagJSON {
-			fmt.Printf("\nHTML report saved to: %s\n", flagExportHTML)
-		}
 	}
 
 	if cacheDB != nil {
 		cacheDB.Close()
 	}
 
-	if report.TotalCritical > 0 || report.TotalHigh > 0 {
-		os.Exit(1)
-	}
+	return report
 }
+
+// keep depsreport imported (used by export command)
+var _ = depsreport.Render
 
 func runExport(paths []string) {
 	if len(paths) < 1 {

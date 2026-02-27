@@ -1,0 +1,787 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DepsRadar — TUI Preview</title>
+<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap" rel="stylesheet">
+<style>
+*, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+:root {
+  --bg:        #0D1117;
+  --bg-deep:   #07090F;
+  --bg-card:   #0F1620;
+  --green:     #39D353;
+  --green-dim: #1C5E2A;
+  --amber:     #F0A500;
+  --red:       #FF4D4D;
+  --orange:    #FF7B29;
+  --cyan:      #00E5FF;
+  --teal:      #3DD9A3;
+  --muted:     #3A5C3A;
+  --muted2:    #5A7A5A;
+  --text:      #C8DCC0;
+  --border:    #192C19;
+  --border2:   #243824;
+}
+
+body {
+  background: var(--bg-deep);
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  padding: 60px 20px 80px;
+  font-family: 'Share Tech Mono', 'Courier New', monospace;
+  color: var(--text);
+}
+
+/* Scanline effect */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background: repeating-linear-gradient(
+    0deg, transparent 0px, transparent 3px,
+    rgba(0,0,0,0.07) 3px, rgba(0,0,0,0.07) 4px
+  );
+  pointer-events: none;
+  z-index: 999;
+}
+
+/* Subtle radial glow */
+body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background: radial-gradient(ellipse 70% 50% at 50% 40%,
+    rgba(57,211,83,0.04) 0%, transparent 70%);
+  pointer-events: none;
+  z-index: 0;
+}
+
+.page-title {
+  color: var(--muted2);
+  font-size: 10px;
+  letter-spacing: 0.4em;
+  text-transform: uppercase;
+  margin-bottom: 48px;
+  position: relative;
+  z-index: 1;
+}
+
+.screens {
+  display: flex;
+  flex-direction: column;
+  gap: 72px;
+  width: 100%;
+  max-width: 880px;
+  position: relative;
+  z-index: 1;
+}
+
+.screen-label {
+  font-size: 9px;
+  letter-spacing: 0.4em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 14px;
+  padding-left: 4px;
+}
+
+/* ───────────────────────────
+   TERMINAL WINDOW
+─────────────────────────── */
+.terminal {
+  background: var(--bg);
+  border-radius: 12px;
+  overflow: hidden;
+  position: relative;
+  box-shadow:
+    0 0 0 1px var(--border),
+    0 0 50px rgba(57,211,83,0.07),
+    0 0 100px rgba(57,211,83,0.03),
+    0 30px 80px rgba(0,0,0,0.75);
+}
+
+.terminal::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 12px;
+  background: linear-gradient(
+    145deg,
+    rgba(57,211,83,0.06) 0%,
+    transparent 40%,
+    rgba(0,229,255,0.03) 100%
+  );
+  pointer-events: none;
+  z-index: 0;
+}
+
+.chrome {
+  background: #121820;
+  padding: 13px 18px;
+  display: flex;
+  align-items: center;
+  border-bottom: 1px solid var(--border);
+  position: relative;
+  z-index: 1;
+}
+
+.dots { display: flex; gap: 7px; }
+.dot  { width: 13px; height: 13px; border-radius: 50%; }
+.d-r  { background: #FF5F57; box-shadow: 0 0 5px rgba(255,95,87,0.5); }
+.d-y  { background: #FEBC2E; box-shadow: 0 0 5px rgba(254,188,46,0.4); }
+.d-g  { background: #28C840; box-shadow: 0 0 5px rgba(40,200,64,0.4); }
+
+.chrome-title {
+  flex: 1;
+  text-align: center;
+  font-size: 11px;
+  color: var(--muted);
+  letter-spacing: 0.25em;
+}
+
+.terminal-body {
+  padding: 28px 36px 32px;
+  position: relative;
+  z-index: 1;
+}
+
+/* ───────────────────────────
+   SCAN SCREEN
+─────────────────────────── */
+.prompt {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin-bottom: 28px;
+  font-size: 14px;
+}
+.prompt-arrow { color: var(--green); }
+.prompt-cmd   { color: var(--text); }
+.prompt-path  { color: var(--cyan); }
+.cursor {
+  display: inline-block;
+  width: 9px; height: 17px;
+  background: var(--green);
+  opacity: 0.9;
+  animation: blink 1.1s step-end infinite;
+  vertical-align: middle;
+  margin-left: 1px;
+}
+@keyframes blink { 0%,100%{opacity:.9} 50%{opacity:0} }
+
+.scan-layout {
+  display: flex;
+  gap: 44px;
+  align-items: flex-start;
+}
+
+/* ── Platypus ── */
+.platypus-zone {
+  position: relative;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+/* Radar rings above the dish */
+.radar-field {
+  position: absolute;
+  top: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 80px;
+  height: 80px;
+  pointer-events: none;
+}
+
+.ring {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  border: 1.5px solid var(--cyan);
+  opacity: 0;
+  animation: expand-ring 2.8s ease-out infinite;
+}
+.ring:nth-child(1) { animation-delay: 0s;    border-color: var(--cyan); }
+.ring:nth-child(2) { animation-delay: 0.7s;  border-color: var(--green); }
+.ring:nth-child(3) { animation-delay: 1.4s;  border-color: var(--cyan); }
+.ring:nth-child(4) { animation-delay: 2.1s;  border-color: var(--green); }
+
+@keyframes expand-ring {
+  0%   { transform: scale(0.3); opacity: 0.9; }
+  100% { transform: scale(4.5); opacity: 0; }
+}
+
+pre.mascot {
+  font-size: 13px;
+  line-height: 1.52;
+  user-select: none;
+  position: relative;
+}
+
+.c-dish { color: var(--cyan); }
+.c-pole { color: var(--muted2); }
+.c-head { color: #C4883A; }
+.c-eye  { color: #FFFFFF; }
+.c-bill { color: #9A7020; }
+.c-body { color: #B07838; }
+.c-wave {
+  color: #3A6060;
+  animation: wave 2.5s ease-in-out infinite;
+}
+.c-tail { color: #885A28; }
+.c-foot { color: #604020; }
+@keyframes wave {
+  0%,100% { color: #3A6060; }
+  50%      { color: #1AA898; }
+}
+
+.mascot-label {
+  margin-top: 10px;
+  font-size: 10px;
+  letter-spacing: 0.2em;
+  color: var(--muted);
+  text-align: center;
+}
+.mascot-label span { color: var(--cyan); }
+
+/* ── Scan Log ── */
+.scan-log {
+  flex: 1;
+  font-size: 13px;
+}
+
+.log-title {
+  color: var(--green);
+  font-size: 15px;
+  letter-spacing: 0.06em;
+  margin-bottom: 16px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.log-title::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: linear-gradient(90deg, var(--border2), transparent);
+}
+
+.log-entry {
+  display: grid;
+  grid-template-columns: 80px 44px 1fr;
+  gap: 10px;
+  line-height: 2;
+  opacity: 0;
+  animation: slide-in 0.35s ease forwards;
+}
+.log-entry:nth-child(2)  { animation-delay: 0.3s; }
+.log-entry:nth-child(3)  { animation-delay: 0.8s; }
+.log-entry:nth-child(4)  { animation-delay: 1.3s; }
+.log-entry:nth-child(5)  { animation-delay: 1.9s; }
+.log-entry:nth-child(6)  { animation-delay: 2.5s; }
+.log-entry:nth-child(7)  { animation-delay: 3.1s; }
+.log-entry:nth-child(8)  { animation-delay: 3.6s; }
+
+@keyframes slide-in {
+  from { opacity:0; transform: translateX(-6px); }
+  to   { opacity:1; transform: translateX(0); }
+}
+
+.ts   { color: var(--muted); font-size: 11px; padding-top: 1px; }
+.lvl-info  { color: var(--green); }
+.lvl-warn  { color: var(--amber); }
+.lvl-err   { color: var(--red); }
+.msg       { color: var(--text); }
+.kv-key    { color: var(--cyan); }
+.kv-val    { color: var(--amber); }
+
+.progress-wrap {
+  margin-top: 18px;
+  background: #0A150A;
+  border: 1px solid var(--border2);
+  border-radius: 4px;
+  height: 5px;
+  overflow: hidden;
+}
+.progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--green-dim), var(--green) 80%, #7EF29E);
+  box-shadow: 0 0 12px rgba(57,211,83,0.6);
+  animation: fill-bar 3.8s cubic-bezier(0.1,0.8,0.5,1) forwards;
+  width: 0;
+}
+@keyframes fill-bar {
+  0%   { width: 0%; }
+  15%  { width: 12%; }
+  40%  { width: 52%; }
+  70%  { width: 78%; }
+  90%  { width: 92%; }
+  100% { width: 100%; }
+}
+
+/* ───────────────────────────
+   RESULTS SCREEN
+─────────────────────────── */
+.results-header {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 6px;
+}
+
+.results-title {
+  font-size: 16px;
+  color: var(--green);
+  letter-spacing: 0.08em;
+}
+
+.badge-version {
+  font-size: 10px;
+  color: var(--muted2);
+  border: 1px solid var(--border2);
+  padding: 1px 7px;
+  border-radius: 3px;
+  letter-spacing: 0.1em;
+}
+
+.divider {
+  border: none;
+  border-top: 1px solid var(--border2);
+  margin: 12px 0 20px;
+}
+
+.project-row {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+.proj-icon { color: var(--green); font-size: 13px; }
+.proj-name { color: var(--amber); font-size: 14px; }
+.proj-meta { color: var(--muted2); font-size: 11px; }
+
+/* Table */
+.tbl-outer {
+  border: 1px solid var(--border2);
+  border-radius: 7px;
+  overflow: hidden;
+  margin-bottom: 18px;
+}
+
+.dep-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.dep-table th {
+  background: #0C1510;
+  color: var(--muted2);
+  font-size: 9px;
+  letter-spacing: 0.25em;
+  text-transform: uppercase;
+  padding: 11px 16px;
+  text-align: left;
+  border-bottom: 1px solid var(--border2);
+}
+
+.dep-table td {
+  padding: 10px 16px;
+  border-bottom: 1px solid rgba(25,44,25,0.6);
+  vertical-align: middle;
+}
+
+.dep-table tbody tr:last-child td { border-bottom: none; }
+
+.dep-table tbody tr {
+  opacity: 0;
+  animation: row-in 0.4s ease forwards;
+  transition: background 0.15s;
+}
+.dep-table tbody tr:hover td { background: rgba(57,211,83,0.03); }
+
+.dep-table tbody tr:nth-child(1) { animation-delay: 0.05s; }
+.dep-table tbody tr:nth-child(2) { animation-delay: 0.12s; }
+.dep-table tbody tr:nth-child(3) { animation-delay: 0.20s; }
+.dep-table tbody tr:nth-child(4) { animation-delay: 0.28s; }
+.dep-table tbody tr:nth-child(5) { animation-delay: 0.36s; }
+.dep-table tbody tr:nth-child(6) { animation-delay: 0.44s; }
+.dep-table tbody tr:nth-child(7) { animation-delay: 0.52s; }
+
+@keyframes row-in {
+  from { opacity:0; transform: translateY(5px); }
+  to   { opacity:1; transform: translateY(0); }
+}
+
+.pkg  { color: var(--text); font-size: 13px; }
+.ver  { color: var(--muted2); font-size: 12px; }
+.cve  {
+  font-size: 11px;
+  color: var(--cyan);
+  background: rgba(0,229,255,0.07);
+  border: 1px solid rgba(0,229,255,0.18);
+  padding: 2px 7px;
+  border-radius: 4px;
+  letter-spacing: 0.05em;
+  display: inline-block;
+}
+.no-cve { color: var(--border2); font-size: 14px; }
+
+/* Severity badges */
+.sev {
+  display: inline-block;
+  padding: 2px 9px;
+  border-radius: 4px;
+  font-size: 9px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  font-weight: bold;
+  border: 1px solid;
+}
+.sev-critical {
+  color: var(--red);
+  border-color: rgba(255,77,77,0.45);
+  background: rgba(255,77,77,0.12);
+  animation: crit-glow 1.8s ease-in-out infinite;
+}
+@keyframes crit-glow {
+  0%,100% { box-shadow: 0 0 5px rgba(255,77,77,0.25); }
+  50%      { box-shadow: 0 0 14px rgba(255,77,77,0.55), 0 0 28px rgba(255,77,77,0.2); }
+}
+.sev-high {
+  color: var(--orange);
+  border-color: rgba(255,123,41,0.45);
+  background: rgba(255,123,41,0.12);
+}
+.sev-medium {
+  color: var(--amber);
+  border-color: rgba(240,165,0,0.45);
+  background: rgba(240,165,0,0.1);
+}
+.sev-outdated {
+  color: var(--teal);
+  border-color: rgba(61,217,163,0.35);
+  background: rgba(61,217,163,0.08);
+}
+
+.ver-latest { color: var(--teal); font-size: 12px; }
+.ver-arrow  { color: var(--muted); font-size: 11px; margin: 0 4px; }
+
+/* Stats bar */
+.stats-bar {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  border: 1px solid var(--border2);
+  border-radius: 7px;
+  overflow: hidden;
+  margin-bottom: 18px;
+}
+.stat-cell {
+  padding: 12px 10px;
+  text-align: center;
+  border-right: 1px solid var(--border2);
+  background: #0C1510;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+}
+.stat-cell:last-child { border-right: none; }
+.stat-lbl {
+  font-size: 8px;
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+  color: var(--muted2);
+}
+.stat-num {
+  font-size: 24px;
+  line-height: 1;
+  font-weight: bold;
+}
+.n-critical { color: var(--red); }
+.n-high     { color: var(--orange); }
+.n-medium   { color: var(--amber); }
+.n-outdated { color: var(--teal); }
+.n-time     { color: var(--muted2); font-size: 15px; }
+
+/* Keybindings hint */
+.keyhints {
+  display: flex;
+  gap: 18px;
+  align-items: center;
+  font-size: 11px;
+  color: var(--muted);
+  margin-top: 4px;
+}
+.key {
+  display: inline-block;
+  border: 1px solid var(--border2);
+  border-radius: 3px;
+  padding: 1px 6px;
+  font-size: 10px;
+  color: var(--text);
+  background: #0F1A0F;
+  margin-right: 4px;
+}
+.key-desc { color: var(--muted2); }
+</style>
+</head>
+<body>
+
+<div class="page-title">DepsRadar — TUI Design Preview</div>
+
+<div class="screens">
+
+  <!-- ══════════════════════════════════
+       SCREEN 1 — SCANNING
+  ══════════════════════════════════ -->
+  <div>
+    <div class="screen-label">Screen 1 · Scanning in progress</div>
+    <div class="terminal">
+      <div class="chrome">
+        <div class="dots">
+          <div class="dot d-r"></div>
+          <div class="dot d-y"></div>
+          <div class="dot d-g"></div>
+        </div>
+        <div class="chrome-title">depsradar scan</div>
+        <div style="width:46px"></div>
+      </div>
+      <div class="terminal-body">
+        <div class="prompt">
+          <span class="prompt-arrow">❯</span>
+          <span class="prompt-cmd">depsradar scan</span>
+          <span class="prompt-path">./</span>
+          <span class="cursor"></span>
+        </div>
+
+        <div class="scan-layout">
+
+          <!-- Platypus mascot -->
+          <div class="platypus-zone">
+            <div class="radar-field">
+              <div class="ring"></div>
+              <div class="ring"></div>
+              <div class="ring"></div>
+              <div class="ring"></div>
+            </div>
+
+<pre class="mascot"><span class="c-dish">        .─────────.</span>
+<span class="c-dish">       ╱  ◦   ◌   ◦  ╲</span>
+<span class="c-dish">      ╱───────┬───────╲</span>
+<span class="c-pole">              │</span>
+<span class="c-pole">         ─────┴─────</span>
+<span class="c-head">        .───────────.</span>
+<span class="c-head">       ╱ </span><span class="c-eye">◉</span><span class="c-head">         </span><span class="c-eye">◉</span><span class="c-head"> ╲</span>
+<span class="c-head">      │      </span><span class="c-head">ᵕ</span><span class="c-head">        │</span>
+<span class="c-head">      │  </span><span class="c-bill">╔═══════════╗</span><span class="c-head">  │</span>
+<span class="c-head">       ╲─</span><span class="c-bill">╚═══════════╝</span><span class="c-head">─╱</span>
+<span class="c-body">        ╭───────────╮</span>
+<span class="c-body">       ╱ </span><span class="c-wave">≋</span><span class="c-body"> </span><span class="c-wave">≋</span><span class="c-body"> </span><span class="c-wave">≋</span><span class="c-body"> </span><span class="c-wave">≋</span><span class="c-body"> </span><span class="c-wave">≋</span><span class="c-body"> ╲</span>
+<span class="c-body">      │ </span><span class="c-wave">≋</span><span class="c-body"> </span><span class="c-wave">≋</span><span class="c-body"> </span><span class="c-wave">≋</span><span class="c-body"> </span><span class="c-wave">≋</span><span class="c-body"> </span><span class="c-wave">≋</span><span class="c-body"> </span><span class="c-wave">≋</span><span class="c-body"> │</span>
+<span class="c-body">       ╲ </span><span class="c-wave">≋</span><span class="c-body"> </span><span class="c-wave">≋</span><span class="c-body"> </span><span class="c-wave">≋</span><span class="c-body"> </span><span class="c-wave">≋</span><span class="c-body"> </span><span class="c-wave">≋</span><span class="c-body"> ╱</span>
+<span class="c-body">        ╰───────────╯</span>
+<span class="c-foot">         ╱╱       ╲╲</span>
+<span class="c-tail">       ╱─────────────╲</span>
+<span class="c-tail">      ╱───────────────╲</span></pre>
+
+            <div class="mascot-label">Perry <span>·</span> DepsRadar v1.1.0</div>
+          </div>
+
+          <!-- Log output -->
+          <div class="scan-log">
+            <div class="log-title">📡 Scanning dependencies</div>
+
+            <div class="log-entry">
+              <span class="ts">12:10:13.421</span>
+              <span class="lvl-info">INFO</span>
+              <span class="msg">Initializing scanner...</span>
+            </div>
+            <div class="log-entry">
+              <span class="ts">12:10:13.445</span>
+              <span class="lvl-info">INFO</span>
+              <span class="msg">Found manifests <span class="kv-key">count</span>=<span class="kv-val">3</span></span>
+            </div>
+            <div class="log-entry">
+              <span class="ts">12:10:13.501</span>
+              <span class="lvl-info">INFO</span>
+              <span class="msg">Scanning <span class="kv-key">path</span>=<span class="kv-val">composer.json</span></span>
+            </div>
+            <div class="log-entry">
+              <span class="ts">12:10:13.612</span>
+              <span class="lvl-info">INFO</span>
+              <span class="msg">Scanning <span class="kv-key">path</span>=<span class="kv-val">package.json</span></span>
+            </div>
+            <div class="log-entry">
+              <span class="ts">12:10:13.788</span>
+              <span class="lvl-info">INFO</span>
+              <span class="msg">Querying advisory DB <span class="kv-key">deps</span>=<span class="kv-val">47</span></span>
+            </div>
+            <div class="log-entry">
+              <span class="ts">12:10:13.902</span>
+              <span class="lvl-warn">WARN</span>
+              <span class="msg">Vulnerability found <span class="kv-key">pkg</span>=<span class="kv-val">guzzlehttp/guzzle</span></span>
+            </div>
+            <div class="log-entry">
+              <span class="ts">12:10:14.124</span>
+              <span class="lvl-info">INFO</span>
+              <span class="msg">Checking latest versions...</span>
+            </div>
+            <div class="log-entry">
+              <span class="ts">12:10:14.398</span>
+              <span class="lvl-info">INFO</span>
+              <span class="msg">Scan complete <span class="kv-key">duration</span>=<span class="kv-val">0.9s</span></span>
+            </div>
+
+            <div class="progress-wrap">
+              <div class="progress-fill"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- ══════════════════════════════════
+       SCREEN 2 — RESULTS
+  ══════════════════════════════════ -->
+  <div>
+    <div class="screen-label">Screen 2 · Results</div>
+    <div class="terminal">
+      <div class="chrome">
+        <div class="dots">
+          <div class="dot d-r"></div>
+          <div class="dot d-y"></div>
+          <div class="dot d-g"></div>
+        </div>
+        <div class="chrome-title">depsradar scan — complete</div>
+        <div style="width:46px"></div>
+      </div>
+      <div class="terminal-body">
+
+        <div class="results-header">
+          <span class="results-title">📡 DepsRadar</span>
+          <span class="badge-version">v1.1.0</span>
+          <span style="flex:1"></span>
+          <span style="color:var(--muted2);font-size:11px;">1 projet scanné</span>
+        </div>
+        <hr class="divider">
+
+        <div class="project-row">
+          <span class="proj-icon">◈</span>
+          <span class="proj-name">test/symfony-app</span>
+          <span class="proj-meta">composer.json — 7 dépendances</span>
+        </div>
+
+        <div class="tbl-outer">
+          <table class="dep-table">
+            <thead>
+              <tr>
+                <th>Package</th>
+                <th>Version</th>
+                <th>CVE</th>
+                <th>Sévérité</th>
+                <th>Dernière version</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><span class="pkg">guzzlehttp/guzzle</span></td>
+                <td><span class="ver">7.4.0</span></td>
+                <td><span class="cve">CVE-2022-31090</span></td>
+                <td><span class="sev sev-medium">MEDIUM</span></td>
+                <td><span class="ver-latest">7.9.2</span></td>
+              </tr>
+              <tr>
+                <td><span class="pkg">twig/twig</span></td>
+                <td><span class="ver">3.4.0</span></td>
+                <td><span class="cve">CVE-2022-39261</span></td>
+                <td><span class="sev sev-medium">MEDIUM</span></td>
+                <td><span class="ver-latest">3.11.0</span></td>
+              </tr>
+              <tr>
+                <td><span class="pkg">phpunit/phpunit</span></td>
+                <td><span class="ver">9.5.0</span></td>
+                <td><span class="cve">CVE-2017-9841</span></td>
+                <td><span class="sev sev-medium">MEDIUM</span></td>
+                <td><span class="ver-latest">11.5.3</span></td>
+              </tr>
+              <tr>
+                <td><span class="pkg">symfony/framework-bundle</span></td>
+                <td><span class="ver">6.0.0</span></td>
+                <td><span class="no-cve">—</span></td>
+                <td><span class="sev sev-outdated">OUTDATED</span></td>
+                <td><span class="ver-latest">v8.0.6</span></td>
+              </tr>
+              <tr>
+                <td><span class="pkg">symfony/security-bundle</span></td>
+                <td><span class="ver">6.0.0</span></td>
+                <td><span class="no-cve">—</span></td>
+                <td><span class="sev sev-outdated">OUTDATED</span></td>
+                <td><span class="ver-latest">v8.0.6</span></td>
+              </tr>
+              <tr>
+                <td><span class="pkg">doctrine/orm</span></td>
+                <td><span class="ver">2.12.0</span></td>
+                <td><span class="no-cve">—</span></td>
+                <td><span class="sev sev-outdated">OUTDATED</span></td>
+                <td><span class="ver-latest">3.6.2</span></td>
+              </tr>
+              <tr>
+                <td><span class="pkg">monolog/monolog</span></td>
+                <td><span class="ver">3.2.0</span></td>
+                <td><span class="no-cve">—</span></td>
+                <td><span class="sev sev-outdated">OUTDATED</span></td>
+                <td><span class="ver-latest">3.10.0</span></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Stats bar -->
+        <div class="stats-bar">
+          <div class="stat-cell">
+            <span class="stat-lbl">Critical</span>
+            <span class="stat-num n-critical">0</span>
+          </div>
+          <div class="stat-cell">
+            <span class="stat-lbl">High</span>
+            <span class="stat-num n-high">0</span>
+          </div>
+          <div class="stat-cell">
+            <span class="stat-lbl">Medium</span>
+            <span class="stat-num n-medium">3</span>
+          </div>
+          <div class="stat-cell">
+            <span class="stat-lbl">Outdated</span>
+            <span class="stat-num n-outdated">4</span>
+          </div>
+          <div class="stat-cell">
+            <span class="stat-lbl">Duration</span>
+            <span class="stat-num n-time">0.9s</span>
+          </div>
+        </div>
+
+        <div class="keyhints">
+          <span><span class="key">q</span><span class="key-desc">quitter</span></span>
+          <span><span class="key">j</span><span class="key">k</span><span class="key-desc">défiler</span></span>
+          <span><span class="key">e</span><span class="key-desc">export HTML</span></span>
+          <span><span class="key">?</span><span class="key-desc">aide</span></span>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+</div><!-- /screens -->
+</body>
+</html>

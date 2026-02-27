@@ -20,12 +20,12 @@ Download the latest release from the [GitHub releases](https://github.com/yourus
 
 ```bash
 # Linux
-curl -L -o depsradar https://github.com/yourusername/depsradar/releases/latest/download/depsradar-linux-amd64
+curl -L -o depsradar https://github.com/alya-labs/depsradar/releases/latest/download/depsradar-linux-amd64
 chmod +x depsradar
 sudo mv depsradar /usr/local/bin/
 
 # macOS
-curl -L -o depsradar https://github.com/yourusername/depsradar/releases/latest/download/depsradar-darwin-amd64
+curl -L -o depsradar https://github.com/alya-labs/depsradar/releases/latest/download/depsradar-darwin-amd64
 chmod +x depsradar
 sudo mv depsradar /usr/local/bin/
 ```
@@ -33,7 +33,7 @@ sudo mv depsradar /usr/local/bin/
 ### Build from source
 
 ```bash
-git clone https://github.com/yourusername/depsradar.git
+git clone https://github.com/alya-labs/depsradar.git
 cd depsradar
 go build -o depsradar ./cmd/depsradar
 sudo mv depsradar /usr/local/bin/

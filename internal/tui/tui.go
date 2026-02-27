@@ -217,28 +217,42 @@ func (m Model) renderMascot() string {
 	pl := stPole.Render
 
 	lines := []string{
-		ds("         .──────."),
-		ds("        ╱ ") + ds(d) + ds(" ╲"),
-		ds("       ╱──────────╲"),
-		pl("            │"),
-		pl("       ─────┴─────"),
-		h("       .─────────."),
-		h("      ╱ ") + e("●") + h("       ") + e("●") + h(" ╲"),
-		h("     │      ~~~      │"),
-		h("     │  ") + b("╔═══════╗") + h("  │"),
-		h("      ╲─") + b("╚═══════╝") + h("─╱"),
-		bd("      ╭────────────╮"),
-		bd("     ╱ ") + wv(w+" "+w+" "+w+" "+w+" "+w+" "+w) + bd(" ╲"),
-		bd("    │ ") + wv(w+" "+w+" "+w+" "+w+" "+w+" "+w+" "+w) + bd(" │"),
-		bd("     ╲ ") + wv(w+" "+w+" "+w+" "+w+" "+w+" "+w) + bd(" ╱"),
-		bd("      ╰────────────╯"),
-		ft("       ╱╱         ╲╲"),
-		tl("      ╱─────────────╲"),
-		tl("     ╱───────────────╲"),
+		ds("        .───────."),
+		ds("       ( ") + ds(d) + ds(" )"),
+		ds("        ╲───┬───╱"),
+		pl("            ╨"),
+		h("        ╭───────╮"),
+		h("       ╱ ") + e("◠") + h("     ") + e("◠") + h(" ╲"),
+		h("      (  ") + e("●") + h("     ") + e("●") + h("  )"),
+		h("       ╲ ") + h(" ◡◡◡ ") + h(" ╱"),
+		b("    ━━━━") + h("╰───────╯") + b("━━━━"),
+		bd("       ╭─────────╮"),
+		bd("      ╱ ") + wv(w+" "+w+" "+w+" "+w+" "+w) + bd(" ╲"),
+		bd("     │ ") + wv(w+" "+w+" "+w+" "+w+" "+w+" "+w) + bd(" │"),
+		bd("      ╲ ") + wv(w+" "+w+" "+w+" "+w+" "+w) + bd(" ╱"),
+		bd("       ╰─────────╯"),
+		ft("      ╱╱╱╱") + tl("  ▓▓▓▓") + ft("  ╲╲╲╲"),
 		"",
-		stMuted.Render("       Perry · DepsRadar"),
+		stMuted.Render("      Perry · DepsRadar"),
 	}
 
+	return strings.Join(lines, "\n")
+}
+
+func renderMiniPerry() string {
+	h := stHead.Render
+	e := stEye.Render
+	b := stBill.Render
+	bd := stBody.Render
+	wv := stWave.Render
+	ft := stFoot.Render
+	tl := stTail.Render
+
+	lines := []string{
+		h("◠‿") + e("●") + b(">━━━"),
+		bd("(") + wv("≋≋≋≋") + bd(")"),
+		ft("╱╱") + ft("  ") + ft("╲╲") + tl("▓▓"),
+	}
 	return strings.Join(lines, "\n")
 }
 
@@ -347,8 +361,11 @@ func (m Model) viewResults() string {
 		tsStr = "  " + stMuted.Render("scanned "+r.Timestamp.Format("2006-01-02 15:04:05"))
 	}
 
-	title := stTitle.Render("  DepsRadar") + "  " + versionPill + tsStr
-	sb.WriteString(title + "\n")
+	miniPerry := renderMiniPerry()
+	titleText := stTitle.Render("DepsRadar") + "  " + versionPill + tsStr
+	titleBlock := lipgloss.NewStyle().PaddingTop(0).Render(titleText)
+	header := lipgloss.JoinHorizontal(lipgloss.Top, "  "+miniPerry, "  ", titleBlock)
+	sb.WriteString(header + "\n")
 	sb.WriteString("  " + stMuted.Render(strings.Repeat("─", 60)) + "\n\n")
 
 	// Projects
@@ -449,7 +466,7 @@ func severityCell(sev string) string {
 }
 
 func renderStats(r *model.Report) string {
-	divider := lipgloss.NewStyle().Foreground(clrMuted2).Height(2).AlignVertical(lipgloss.Center).Render("│")
+	divider := lipgloss.NewStyle().Foreground(clrMuted2).Render("│\n│")
 
 	cell := func(icon, label, value string, vs lipgloss.Style) string {
 		return lipgloss.NewStyle().Width(16).Align(lipgloss.Center).Render(
@@ -475,7 +492,11 @@ func renderStats(r *model.Report) string {
 		Padding(0, 1).
 		Render(lipgloss.JoinHorizontal(lipgloss.Center, cells...))
 
-	return "  " + bar
+	var lines []string
+	for _, l := range strings.Split(bar, "\n") {
+		lines = append(lines, "  "+l)
+	}
+	return strings.Join(lines, "\n")
 }
 
 func renderKeyhints() string {

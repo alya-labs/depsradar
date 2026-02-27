@@ -49,6 +49,7 @@ type Report struct {
 	TotalCritical int           `json:"critical"`
 	TotalHigh     int           `json:"high"`
 	TotalMedium   int           `json:"medium"`
+	TotalLow      int           `json:"low"`
 	TotalOutdated int           `json:"outdated"`
 	TotalDuration float64       `json:"total_duration"`
 	Timestamp     time.Time     `json:"timestamp"`
@@ -113,6 +114,7 @@ func GenerateHTML(r *Report) string {
         .critical { color: #f87171; }
         .high { color: #fb923c; }
         .medium { color: #fbbf24; }
+        .low { color: #94a3b8; }
         .behind { color: #facc15; }
         .outdated { color: #a3e635; }
         .ok { color: #4ade80; }
@@ -176,6 +178,8 @@ func (v *Vulnerability) Score() int {
 		return 75
 	case "MEDIUM":
 		return 40
+	case "LOW":
+		return 10
 	}
 	return 0
 }
@@ -217,8 +221,8 @@ func GetSeverityLabel(score int) string {
 		return "HIGH"
 	case score >= 40:
 		return "MEDIUM"
-	case score >= 15:
-		return "BEHIND"
+	case score >= 10:
+		return "LOW"
 	case score >= 5:
 		return "OUTDATED"
 	default:

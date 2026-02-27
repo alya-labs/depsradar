@@ -30,15 +30,15 @@ func TestPackageJSONParser_Dependencies(t *testing.T) {
 	require.NoError(t, err)
 	deps := project.Dependencies
 
-	assert.Equal(t, "axios", deps[0].Name)
-	assert.Equal(t, "0.21.1", deps[0].Version)
-	assert.Equal(t, "npm", deps[0].Ecosystem)
+	depMap := make(map[string]string)
+	for _, d := range deps {
+		depMap[d.Name] = d.Version
+		assert.Equal(t, "npm", d.Ecosystem)
+	}
 
-	assert.Equal(t, "lodash", deps[1].Name)
-	assert.Equal(t, "4.17.20", deps[1].Version)
-
-	assert.Equal(t, "express", deps[2].Name)
-	assert.Equal(t, "4.18.2", deps[2].Version)
+	assert.Equal(t, "0.21.1", depMap["axios"])
+	assert.Equal(t, "4.17.20", depMap["lodash"])
+	assert.Equal(t, "4.18.2", depMap["express"])
 }
 
 func TestPackageJSONParser_ParseError(t *testing.T) {

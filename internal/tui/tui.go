@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	lgtable "github.com/charmbracelet/lipgloss/table"
@@ -106,22 +107,31 @@ const (
 type ScanFunc func() (*model.Report, error)
 
 type Model struct {
-	state  int
-	frame  int
-	logs   []string
-	report *model.Report
-	err    error
-	logCh  <-chan string
-	scanFn ScanFunc
-	width  int
+	state          int
+	frame          int
+	logs           []string
+	report         *model.Report
+	err            error
+	logCh          <-chan string
+	scanFn         ScanFunc
+	width          int
+	height         int
+	totalManifests int
+	viewport       viewport.Model
+	viewportReady  bool
 }
 
-func New(scanFn ScanFunc, logCh <-chan string, width int) Model {
+func New(scanFn ScanFunc, logCh <-chan string, width int, totalManifests ...int) Model {
+	total := 0
+	if len(totalManifests) > 0 {
+		total = totalManifests[0]
+	}
 	return Model{
-		state:  stateScanning,
-		scanFn: scanFn,
-		logCh:  logCh,
-		width:  width,
+		state:          stateScanning,
+		scanFn:         scanFn,
+		logCh:          logCh,
+		width:          width,
+		totalManifests: total,
 	}
 }
 
@@ -143,11 +153,24 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 		}
 		if msg.String() == "e" && m.state == stateResults && m.report != nil {
-			m.report.ExportHTML("depsradar-report.html")
+			filename := fmt.Sprintf("depsradar-report-%s.html", time.Now().Format("2006-01-02-150405"))
+			m.report.ExportHTML(filename)
+		}
+		if m.state == stateResults && m.viewportReady {
+			var cmd tea.Cmd
+			m.viewport, cmd = m.viewport.Update(msg)
+			return m, cmd
 		}
 
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
+		m.height = msg.Height
+		if m.state == stateResults {
+			// Reserve 2 lines for keyhints footer
+			m.viewport.Width = msg.Width
+			m.viewport.Height = msg.Height - 2
+			m.viewportReady = true
+		}
 
 	case tickMsg:
 		m.frame++
@@ -172,6 +195,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.report.Timestamp = time.Now()
 		}
 		m.state = stateResults
+
+		// Initialize viewport with results content
+		content := m.renderResultsContent()
+		h := m.height - 2 // reserve space for keyhints
+		if h < 10 {
+			h = 24
+		}
+		m.viewport = viewport.New(m.width, h)
+		m.viewport.SetContent(content)
+		m.viewportReady = true
 		return m, nil
 	}
 
@@ -278,7 +311,19 @@ func (m Model) renderLogs() string {
 	spinners := []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
 	spin := stCyan.Render(spinners[m.frame%len(spinners)])
 	logLines = append(logLines, "")
-	logLines = append(logLines, spin+" "+stMuted.Render("scanning..."))
+
+	// Count scanned manifests from log lines
+	scanned := 0
+	for _, l := range m.logs {
+		if strings.Contains(l, "Scanning manifest") || strings.Contains(l, "msg=Scanning") {
+			scanned++
+		}
+	}
+	progressText := "scanning..."
+	if m.totalManifests > 0 {
+		progressText = fmt.Sprintf("scanning %d/%d manifests...", scanned, m.totalManifests)
+	}
+	logLines = append(logLines, spin+" "+stMuted.Render(progressText))
 
 	return strings.Join(logLines, "\n")
 }
@@ -348,6 +393,21 @@ func (m Model) viewResults() string {
 		return ""
 	}
 
+	if m.viewportReady {
+		footer := renderKeyhints()
+		scrollPct := fmt.Sprintf(" %3.f%%", m.viewport.ScrollPercent()*100)
+		footer += stMuted.Render(scrollPct)
+		return m.viewport.View() + "\n" + footer + "\n"
+	}
+
+	return m.renderResultsContent() + "\n" + renderKeyhints() + "\n"
+}
+
+func (m Model) renderResultsContent() string {
+	if m.report == nil {
+		return ""
+	}
+
 	r := m.report
 	var sb strings.Builder
 
@@ -374,13 +434,23 @@ func (m Model) viewResults() string {
 		sb.WriteString("\n")
 	}
 
+	// Errors section
+	var totalErrors int
+	for _, res := range r.Projects {
+		totalErrors += len(res.Errors)
+	}
+	if totalErrors > 0 {
+		sb.WriteString("  " + stRed.Render(fmt.Sprintf("⚠ %d error(s) during scan:", totalErrors)) + "\n")
+		for _, res := range r.Projects {
+			for _, e := range res.Errors {
+				sb.WriteString("    " + stMuted.Render("• "+e) + "\n")
+			}
+		}
+		sb.WriteString("\n")
+	}
+
 	// Stats bar
 	sb.WriteString(renderStats(r))
-	sb.WriteString("\n")
-
-	// Keyhints
-	sb.WriteString(renderKeyhints())
-	sb.WriteString("\n")
 
 	return sb.String()
 }
@@ -458,6 +528,8 @@ func severityCell(sev string) string {
 		return lipgloss.NewStyle().Background(clrOrange).Foreground(clrDark).Bold(true).Padding(0, 1).Render("HIGH")
 	case "MEDIUM":
 		return lipgloss.NewStyle().Background(clrAmber).Foreground(clrDark).Bold(true).Padding(0, 1).Render("MEDIUM")
+	case "LOW":
+		return lipgloss.NewStyle().Background(clrMuted2).Foreground(clrLight).Bold(true).Padding(0, 1).Render("LOW")
 	case "OUTDATED":
 		return lipgloss.NewStyle().Background(clrTeal).Foreground(clrDark).Bold(true).Padding(0, 1).Render("OUTDATED")
 	default:
@@ -480,6 +552,8 @@ func renderStats(r *model.Report) string {
 		cell("▲", "HIGH", fmt.Sprintf("%d", r.TotalHigh), stOrange),
 		divider,
 		cell("●", "MEDIUM", fmt.Sprintf("%d", r.TotalMedium), lipgloss.NewStyle().Foreground(clrAmber)),
+		divider,
+		cell("○", "LOW", fmt.Sprintf("%d", r.TotalLow), stMuted),
 		divider,
 		cell("↑", "OUTDATED", fmt.Sprintf("%d", r.TotalOutdated), stTeal),
 		divider,
@@ -511,6 +585,8 @@ func renderKeyhints() string {
 		hint("q", "quit"),
 		"   ",
 		hint("e", "export HTML"),
+		"   ",
+		hint("j/k", "scroll"),
 		"   ",
 		hint("?", "help"),
 	)

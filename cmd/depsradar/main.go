@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"strings"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -33,8 +34,12 @@ var (
 	flagParallel   int
 	flagVerbose    bool
 	flagRecursive  bool
-	flagConfig     string
-	flagVersion    bool
+	flagConfig      string
+	flagVersion     bool
+	flagFailOn      string
+	flagMinSeverity string
+	flagNoColor     bool
+	flagFormat      string
 )
 
 func init() {
@@ -48,6 +53,10 @@ func init() {
 	flag.BoolVar(&flagRecursive, "r", false, "Recursive scan")
 	flag.StringVar(&flagConfig, "config", ".depsradar.toml", "Path to config file")
 	flag.BoolVar(&flagVersion, "version", false, "Show version")
+	flag.StringVar(&flagFailOn, "fail-on", "high", "Exit 1 on severity >= threshold (critical, high, medium, low)")
+	flag.StringVar(&flagMinSeverity, "min-severity", "", "Only show vulnerabilities at or above this severity (critical, high, medium, low)")
+	flag.BoolVar(&flagNoColor, "no-color", false, "Disable colored output")
+	flag.StringVar(&flagFormat, "format", "", "Output format: json, sarif, text")
 	flag.Usage = func() {
 		fmt.Printf("DepsRadar %s\n", Version)
 		fmt.Println("Usage: depsradar <command> [options]")
@@ -63,8 +72,54 @@ func init() {
 	}
 }
 
+var severityLevels = map[string]int{
+	"critical": 4,
+	"high":     3,
+	"medium":   2,
+	"low":      1,
+}
+
+func severityMeetsThreshold(severity, threshold string) bool {
+	sev := severityLevels[strings.ToLower(severity)]
+	thr := severityLevels[strings.ToLower(threshold)]
+	return sev >= thr
+}
+
+func shouldFailOnReport(report model.Report, threshold string) bool {
+	if threshold == "" {
+		return false
+	}
+	for _, r := range report.Projects {
+		for _, v := range r.Vulnerabilities {
+			if severityMeetsThreshold(v.Severity, threshold) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func filterReportBySeverity(report *model.Report, minSev string) {
+	if minSev == "" {
+		return
+	}
+	for i := range report.Projects {
+		var filtered []model.Vulnerability
+		for _, v := range report.Projects[i].Vulnerabilities {
+			if severityMeetsThreshold(v.Severity, minSev) {
+				filtered = append(filtered, v)
+			}
+		}
+		report.Projects[i].Vulnerabilities = filtered
+	}
+}
+
 func main() {
 	flag.Parse()
+
+	if flagNoColor {
+		os.Setenv("NO_COLOR", "1")
+	}
 
 	if flagVersion {
 		fmt.Printf("DepsRadar version %s\n", Version)
@@ -174,11 +229,24 @@ func runScan(paths []string) {
 		cfg.Parallel = 10
 	}
 
-	// JSON mode: no TUI, silent logs
-	if flagJSON {
+	// Handle --format as alias for output modes
+	if flagFormat == "json" {
+		flagJSON = true
+	}
+
+	// Non-TUI output modes
+	if flagJSON || flagFormat == "sarif" || flagFormat == "text" {
 		report := doScan(allManifests, cfg, nil)
-		report.PrintJSON(os.Stdout)
-		if report.TotalCritical > 0 || report.TotalHigh > 0 {
+		filterReportBySeverity(&report, flagMinSeverity)
+		switch {
+		case flagFormat == "sarif":
+			report.PrintSARIF(os.Stdout)
+		case flagFormat == "text":
+			report.RenderTerminal(os.Stdout)
+		default:
+			report.PrintJSON(os.Stdout)
+		}
+		if shouldFailOnReport(report, flagFailOn) {
 			os.Exit(1)
 		}
 		return
@@ -194,7 +262,7 @@ func runScan(paths []string) {
 		return &report, nil
 	}
 
-	m := tui.New(scanFn, logCh, 0)
+	m := tui.New(scanFn, logCh, 0, len(allManifests))
 	p := tea.NewProgram(m, tea.WithAltScreen())
 	if _, err := p.Run(); err != nil {
 		fmt.Fprintf(os.Stderr, "TUI error: %v\n", err)
@@ -223,8 +291,12 @@ func doScan(allManifests []string, cfg *config.Config, logCh chan string) model.
 	results := make(chan model.ScanResult, len(allManifests))
 	start := time.Now()
 
+	// Limit concurrent manifest scanning to avoid overwhelming APIs
+	scanSem := make(chan struct{}, cfg.Parallel)
 	for _, m := range allManifests {
+		scanSem <- struct{}{}
 		go func(path string) {
+			defer func() { <-scanSem }()
 			results <- s.ScanManifest(path)
 		}(m)
 	}
@@ -250,6 +322,8 @@ func doScan(allManifests []string, cfg *config.Config, logCh chan string) model.
 				report.TotalHigh++
 			case "MEDIUM":
 				report.TotalMedium++
+			case "LOW":
+				report.TotalLow++
 			}
 		}
 		report.TotalOutdated += len(r.OutdatedDeps)

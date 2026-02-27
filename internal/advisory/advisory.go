@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"time"
 
+	"depsradar/internal/httputil"
 	"depsradar/internal/model"
 )
 
@@ -115,7 +116,14 @@ func (c *Client) GetVulnerabilitiesBatch(deps []model.Dependency) ([][]model.Vul
 	c.sem <- struct{}{}
 	defer func() { <-c.sem }()
 
-	resp, err := c.http.Post("https://api.osv.dev/v1/querybatch", "application/json", bytes.NewReader(body))
+	req, err := http.NewRequest("POST", "https://api.osv.dev/v1/querybatch", bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("User-Agent", "depsradar/1.1.0")
+
+	resp, err := httputil.DoWithRetry(c.http, req)
 	if err != nil {
 		return nil, err
 	}
@@ -173,7 +181,7 @@ func (c *Client) parseSeverity(sev []OSVSeverity) severityResult {
 	var cvss float64
 	fmt.Sscanf(sev[0].Score, "%f", &cvss)
 
-	label := "MEDIUM"
+	label := "LOW"
 	if cvss >= 9.0 {
 		label = "CRITICAL"
 	} else if cvss >= 7.0 {

@@ -35,8 +35,10 @@ func FindManifests(root string, recursive bool) ([]string, error) {
 			return err
 		}
 		if info.IsDir() {
-			// Skip node_modules, vendor, etc.
-			if info.Name() == "node_modules" || info.Name() == "vendor" || info.Name() == ".git" {
+			switch info.Name() {
+			case "node_modules", "vendor", ".git", ".venv", "venv",
+				"__pycache__", "target", "dist", "build", ".tox",
+				".mypy_cache", ".pytest_cache", ".next", ".nuxt":
 				return filepath.SkipDir
 			}
 			return nil
@@ -249,12 +251,22 @@ func (p *PyProjectParser) Parse(path string) (*model.Project, error) {
 	}
 
 	deps := make([]model.Dependency, 0)
+	pep508Re := regexp.MustCompile(`^([a-zA-Z0-9]([a-zA-Z0-9._-]*[a-zA-Z0-9])?)(\[.*?\])?\s*([<>=!~]+.*)?$`)
 	for _, dep := range proj.Project.Dependencies {
-		nameVer := strings.Split(dep, " ")
-		depName := nameVer[0]
+		dep = strings.TrimSpace(dep)
+		if dep == "" {
+			continue
+		}
+		matches := pep508Re.FindStringSubmatch(dep)
+		if matches == nil {
+			continue
+		}
+		depName := matches[1]
 		ver := ""
-		if len(nameVer) > 1 {
-			ver = cleanVersion(strings.Trim(nameVer[1], "\""))
+		if matches[4] != "" {
+			// Extract version from specifier like ">=2.25.0,<3.0"
+			verSpec := strings.TrimSpace(matches[4])
+			ver = cleanVersion(verSpec)
 		}
 		deps = append(deps, model.Dependency{
 			Name:      depName,

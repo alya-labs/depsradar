@@ -5,7 +5,11 @@ import (
 	"fmt"
 	"net/http"
 	"time"
+
+	"depsradar/internal/httputil"
 )
+
+const userAgent = "depsradar/1.1.0 (https://github.com/depsradar/depsradar)"
 
 type Client struct {
 	http   *http.Client
@@ -52,7 +56,7 @@ func (c *Client) GetLatestVersion(name, ecosystem string) (string, error) {
 	case "crates.io":
 		return c.getCrateVersion(name)
 	case "Go":
-		return name, nil
+		return c.getGoVersion(name)
 	case "Packagist":
 		return c.getPackagistVersion(name)
 	default:
@@ -60,9 +64,18 @@ func (c *Client) GetLatestVersion(name, ecosystem string) (string, error) {
 	}
 }
 
+func (c *Client) doGet(url string) (*http.Response, error) {
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("User-Agent", userAgent)
+	return httputil.DoWithRetry(c.http, req)
+}
+
 func (c *Client) getNPMVersion(name string) (string, error) {
 	url := fmt.Sprintf("https://registry.npmjs.org/%s/latest", name)
-	resp, err := c.http.Get(url)
+	resp, err := c.doGet(url)
 	if err != nil {
 		return "", err
 	}
@@ -82,7 +95,7 @@ func (c *Client) getNPMVersion(name string) (string, error) {
 
 func (c *Client) getPyPIVersion(name string) (string, error) {
 	url := fmt.Sprintf("https://pypi.org/pypi/%s/json", name)
-	resp, err := c.http.Get(url)
+	resp, err := c.doGet(url)
 	if err != nil {
 		return "", err
 	}
@@ -102,7 +115,7 @@ func (c *Client) getPyPIVersion(name string) (string, error) {
 
 func (c *Client) getCrateVersion(name string) (string, error) {
 	url := fmt.Sprintf("https://crates.io/api/v1/crates/%s", name)
-	resp, err := c.http.Get(url)
+	resp, err := c.doGet(url)
 	if err != nil {
 		return "", err
 	}
@@ -132,7 +145,7 @@ type PackagistResponse struct {
 
 func (c *Client) getPackagistVersion(name string) (string, error) {
 	url := fmt.Sprintf("https://repo.packagist.org/p2/%s.json", name)
-	resp, err := c.http.Get(url)
+	resp, err := c.doGet(url)
 	if err != nil {
 		return "", err
 	}
@@ -165,6 +178,36 @@ func (c *Client) getPackagistVersion(name string) (string, error) {
 	ver, ok := first["version"].(string)
 	if !ok {
 		return "", nil
+	}
+
+	return ver, nil
+}
+
+type GoProxyResponse struct {
+	Version string `json:"Version"`
+}
+
+func (c *Client) getGoVersion(name string) (string, error) {
+	url := fmt.Sprintf("https://proxy.golang.org/%s/@latest", name)
+	resp, err := c.doGet(url)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		return "", fmt.Errorf("go proxy: %s not found", name)
+	}
+
+	var data GoProxyResponse
+	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
+		return "", err
+	}
+
+	// Strip the "v" prefix for consistency
+	ver := data.Version
+	if len(ver) > 0 && ver[0] == 'v' {
+		ver = ver[1:]
 	}
 
 	return ver, nil

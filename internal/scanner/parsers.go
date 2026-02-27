@@ -27,11 +27,7 @@ func FindManifests(root string, recursive bool) ([]string, error) {
 	var manifests []string
 
 	if !recursive {
-		m, err := FindManifest(root)
-		if err != nil {
-			return nil, err
-		}
-		return []string{m}, nil
+		return findManifestsInDir(root)
 	}
 
 	err := filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
@@ -59,26 +55,41 @@ func FindManifests(root string, recursive bool) ([]string, error) {
 	return manifests, err
 }
 
-func FindManifest(path string) (string, error) {
+// findManifestsInDir returns all recognised manifest files in a directory.
+func findManifestsInDir(path string) ([]string, error) {
 	info, err := os.Stat(path)
+	if err != nil {
+		return nil, err
+	}
+
+	if !info.IsDir() {
+		if _, err := os.Stat(path); err != nil {
+			return nil, err
+		}
+		return []string{path}, nil
+	}
+
+	var found []string
+	for _, mf := range manifestFiles {
+		manifestPath := filepath.Join(path, mf)
+		if _, err := os.Stat(manifestPath); err == nil {
+			found = append(found, manifestPath)
+		}
+	}
+	if len(found) == 0 {
+		return nil, errors.New("no manifest found")
+	}
+	return found, nil
+}
+
+// FindManifest returns the first recognised manifest in a directory (kept for
+// backward-compatibility with callers that expect a single result).
+func FindManifest(path string) (string, error) {
+	found, err := findManifestsInDir(path)
 	if err != nil {
 		return "", err
 	}
-
-	if info.IsDir() {
-		for _, mf := range manifestFiles {
-			manifestPath := filepath.Join(path, mf)
-			if _, err := os.Stat(manifestPath); err == nil {
-				return manifestPath, nil
-			}
-		}
-		return "", errors.New("no manifest found")
-	}
-
-	if _, err := os.Stat(path); err != nil {
-		return "", err
-	}
-	return path, nil
+	return found[0], nil
 }
 
 type ManifestParser interface {

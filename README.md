@@ -16,16 +16,26 @@ A CLI tool to scan multiple projects for vulnerable or outdated dependencies. Bu
 
 ### Pre-built binaries
 
-Download the latest release from the [GitHub releases](https://github.com/yourusername/depsradar/releases):
+Download the latest release from the [GitHub releases](https://github.com/alya-labs/depsradar/releases):
 
 ```bash
-# Linux
+# Linux (amd64)
 curl -L -o depsradar https://github.com/alya-labs/depsradar/releases/latest/download/depsradar-linux-amd64
 chmod +x depsradar
 sudo mv depsradar /usr/local/bin/
 
-# macOS
+# Linux (arm64)
+curl -L -o depsradar https://github.com/alya-labs/depsradar/releases/latest/download/depsradar-linux-arm64
+chmod +x depsradar
+sudo mv depsradar /usr/local/bin/
+
+# macOS (Intel)
 curl -L -o depsradar https://github.com/alya-labs/depsradar/releases/latest/download/depsradar-darwin-amd64
+chmod +x depsradar
+sudo mv depsradar /usr/local/bin/
+
+# macOS (Apple Silicon)
+curl -L -o depsradar https://github.com/alya-labs/depsradar/releases/latest/download/depsradar-darwin-arm64
 chmod +x depsradar
 sudo mv depsradar /usr/local/bin/
 ```
